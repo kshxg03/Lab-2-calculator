@@ -1,6 +1,8 @@
 from fastapi.testclient import TestClient
-import re
-from main import app  # or whatever your app module is
+from app.main import app
+from app.dependencies import history
+
+client = TestClient(app)
 
 client = TestClient(app)
 
