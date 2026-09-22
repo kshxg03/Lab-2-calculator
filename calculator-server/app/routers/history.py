@@ -1,3 +1,4 @@
+# app/routers/history.py
 from collections import deque
 from typing import List
 from fastapi import APIRouter, Depends
@@ -16,4 +17,4 @@ def get_history_route(history: deque = Depends(get_history)):
 @router.delete("/history")
 def clear_history_route(history: deque = Depends(get_history)):
     history.clear()
-    return {"ok": True}
+    return {"ok": True, "cleared": True}
