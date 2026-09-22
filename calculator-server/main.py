@@ -5,9 +5,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from asteval import Interpreter
 
-from calculator import expand_percent
+from models import CalculatorLog, Expression
 
-history = deque(maxlen=1000)
+HISTORY_MAX = 1000
+history = deque(maxlen=HISTORY_MAX)
 
 app = FastAPI(title="Mini Calculator API")
 
@@ -18,51 +19,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Shared clean symbol dictionary
-MATH_SYMBOLS = {"pi": math.pi, "e": math.e}
+# ---------- Safe evaluator ----------
+aeval = Interpreter(minimal=True, usersyms={"pi": math.pi, "e": math.e})
 
 
 @app.post("/calculate")
-def calculate(expr: str):
-    # CRITICAL FIX: Instantiate an isolated Interpreter per network request.
-    # This prevents parallel request overlaps from polluting or bypassing the error check.
-    local_eval = Interpreter(minimal=True, usersyms=MATH_SYMBOLS)
-    
+def calculate(expr: Expression):
     try:
-        code = expand_percent(expr)
-        result = local_eval(code)
-        
-        # Verify if an evaluation error occurred during this specific run
-        if local_eval.error:
-            msg = "; ".join(str(e.get_error()) for e in local_eval.error)
+        code = expr.expand_percent()
+        code = code.replace('÷', '/').replace('×', '*')
+        result = aeval(code)
+        if aeval.error:
+            msg = "; ".join(str(e.get_error()) for e in aeval.error)
+            aeval.error.clear()
             return {"ok": False, "expr": expr, "result": "", "error": msg}
-        
-        # If result is None but no error occurred, ensure it's handled safely
-        if result is None:
-            return {"ok": False, "expr": expr, "result": "", "error": "Invalid mathematical expression"}
-
-        # Build structural mapping consistency for your JS frontend (`expr` instead of `lhs`)
-        history_item = {"expr": expr, "result": result}
-        
-        # Clean state control: Ensure this exact entry isn't accidentally duplicated
-        if not history or history[0] != history_item:
-            history.appendleft(history_item)
-        
+        history.appendleft(CalculatorLog(
+            timestamp=datetime.now().isoformat() + "Z",
+            expr=expr.expr,
+            result=result))
         return {"ok": True, "expr": expr, "result": result, "error": ""}
     except Exception as e:
         return {"ok": False, "expr": expr, "error": str(e)}
 
 
 @app.get("/history")
-def get_history(limit: int = 10):
-    """
-    Returns the calculation history.
-    """
-    return list(history)[:limit]
-
-
+def get_history(limit: int = 50) -> list[CalculatorLog]:
+    return list(history)[: max(0, min(limit, HISTORY_MAX))]
 
 @app.delete("/history")
 def clear_history():
     history.clear()
-    return {"ok": True}
+    return {"ok": True, "cleared": True}
