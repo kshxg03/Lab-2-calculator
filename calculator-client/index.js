@@ -26,7 +26,7 @@ function updateDisplay() {
 function appendDigit(d) {
     if (lastWasEquals) { expression = ""; lastWasEquals = false; }
     const clearBtn = grid.querySelector('[data-action="clear"]');
-    clearBtn.textContent = (current !== "0" || expression) ? "C" : "AC";
+    if (clearBtn) clearBtn.textContent = (current !== "0" || expression) ? "C" : "AC";
 
     if (d === ".") {
         if (!current.includes(".")) current += ".";
@@ -79,7 +79,7 @@ function clearAllOrEntry() {
         updateActiveOps(null);
     }
     const clearBtn = grid.querySelector('[data-action="clear"]');
-    clearBtn.textContent = (expression) ? "C" : "AC";
+    if (clearBtn) clearBtn.textContent = (expression) ? "C" : "AC";
     updateDisplay();
 }
 
@@ -97,27 +97,38 @@ function renderHistory(items) {
 
 // ===== Server history API =====
 async function fetchServerHistory() {
-
-    const url = `${API_BASE}/history?limit=50`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`GET /history ${res.status}`);
-    const data = await res.json();
-    renderHistory(data);
-
+    try {
+        const url = `${API_BASE}/history?limit=50`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`GET /history ${res.status}`);
+        const data = await res.json();
+        renderHistory(data);
+    } catch (err) {
+        console.error("Failed to fetch history:", err);
+    }
 }
 
 async function clearServerHistory() {
-    const url = `${API_BASE}/history`;
-    const res = await fetch(url, { method: "DELETE" });
-    if (!res.ok) throw new Error(`DELETE /history ${res.status}`);
-    await fetchServerHistory();
+    try {
+        const url = `${API_BASE}/history`;
+        const res = await fetch(url, { method: "DELETE" });
+        if (!res.ok) throw new Error(`DELETE /history ${res.status}`);
+        await fetchServerHistory();
+    } catch (err) {
+        console.error("Failed to clear history:", err);
+    }
 }
 
 // ===== Calculate =====
 async function equals() {
     const displayExpr = expression ? `${expression} ${current}` : current;
-    const sendExpr = displayExpr.trim();
+    let sendExpr = displayExpr.trim();
     if (!sendExpr) return;
+
+    // FIX: Translate UI symbols to standard Python symbols before sending to FastAPI
+    sendExpr = sendExpr.replace(/×/g, "*")
+                       .replace(/÷/g, "/")
+                       .replace(/−/g, "-");
 
     try {
         const url = `${API_BASE}/calculate?expr=${encodeURIComponent(sendExpr)}`;
@@ -125,7 +136,6 @@ async function equals() {
         const data = await res.json();
 
         if (data && data.ok) {
-            const pretty = `${expression ? expression + " " : ""}${current}`;
             current = String(data.result);
             expression = "";
             pendingOp = null;
@@ -134,7 +144,6 @@ async function equals() {
             updateDisplay();
 
             await fetchServerHistory();
-
         } else {
             showError((data && data.error) || "Error");
         }
@@ -146,7 +155,7 @@ async function equals() {
 function showError(msg) {
     valueEl.textContent = "Error";
     exprEl.textContent = msg;
-    setTimeout(() => { valueEl.textContent = "0"; exprEl.textContent = ""; }, 1500);
+    setTimeout(() => { valueEl.textContent = current; exprEl.textContent = ""; }, 1500);
 }
 
 // ===== Events =====
@@ -159,6 +168,7 @@ grid.addEventListener("click", (e) => {
     else if (btn.dataset.action === "equals") equals();
     else if (btn.dataset.action === "clear") clearAllOrEntry();
     else if (btn.dataset.action === "negate") negate();
+    else if (btn.dataset.action === "percent") percent();
 });
 
 window.addEventListener("keydown", (e) => {
@@ -175,11 +185,17 @@ window.addEventListener("keydown", (e) => {
     if (k === "/") { setOp("÷"); return; }
 });
 
-document.querySelector('[data-key="%"]').addEventListener("click", percent);
+// Safe percentage initialization check
+const pctBtn = document.querySelector('[data-key="%"]') || document.querySelector('[data-action="percent"]');
+if (pctBtn) {
+    pctBtn.addEventListener("click", percent);
+}
 
-clearHistoryBtn.addEventListener("click", () => {
-    clearServerHistory()
-});
+if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener("click", () => {
+        clearServerHistory();
+    });
+}
 
 // Initial paint & try to load server history
 updateDisplay();
