@@ -1,0 +1,18 @@
+[project]
+name = "lab-2"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "asteval>=1.0.10",
+    "fastapi[standard]>=0.141.1",
+    "pytest>=9.1.1",
+]
+
+[project.scripts]
+lab-2 = "lab_2:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
